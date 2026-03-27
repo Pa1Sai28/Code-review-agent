@@ -4,10 +4,13 @@ import os
 from flask import Blueprint, request, abort
 from dotenv import load_dotenv
 from app.utils.security import verify_github_signature
+from pathlib import Path
 
-load_dotenv()
+load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
+
 logger = logging.getLogger(__name__)
 github_bp = Blueprint("github", __name__)
+
 
 @github_bp.route("/webhook/github", methods=["POST"])
 def github_webhook():
