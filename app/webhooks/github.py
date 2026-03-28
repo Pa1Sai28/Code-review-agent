@@ -51,7 +51,11 @@ def github_webhook():
         logger.warning("Rejected request — invalid GitHub signature")
         abort(403)
 
-    payload = json.loads(payload_bytes)
+    try:
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON payload received — ignoring")
+        return {"status": "received"}, 200
     event = request.headers.get("X-GitHub-Event", "unknown")
 
     logger.info(f"GitHub event received and verified: {event}")

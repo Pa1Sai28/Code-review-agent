@@ -51,7 +51,11 @@ def gitlab_webhook():
         logger.warning("Rejected request — invalid GitLab token")
         abort(403)
 
-    payload = json.loads(payload_bytes)
+    try:
+        payload = json.loads(payload_bytes)
+    except json.JSONDecodeError:
+        logger.warning("Invalid JSON payload received — ignoring")
+        return {"status": "received"}, 200
     event = request.headers.get("X-Gitlab-Event", "unknown")
 
     logger.info(f"GitLab event received and verified: {event}")

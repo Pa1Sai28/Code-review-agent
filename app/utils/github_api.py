@@ -1,5 +1,6 @@
 import logging
 from github import Github
+import github
 from github.GithubException import GithubException
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ def fetch_pr_diff(repo_name: str, pr_number: int, github_pat: str) -> list:
     Returns a list of dicts: [{filename, patch, additions, deletions}]
     """
     try:
-        g = Github(github_pat)
+        g = Github(auth=github.Auth.Token(github_pat))
         repo = g.get_repo(repo_name)
         pull_request = repo.get_pull(pr_number)
         files = pull_request.get_files()
