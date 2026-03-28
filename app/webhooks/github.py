@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+import threading
 from flask import Blueprint, request, abort
 from dotenv import load_dotenv
 from app.utils.security import verify_github_signature
@@ -11,6 +12,32 @@ load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
 
 logger = logging.getLogger(__name__)
 github_bp = Blueprint("github", __name__)
+
+
+def process_github_event(payload: dict, event: str, github_pat: str):
+    """
+    Process the GitHub event in a background thread.
+    This runs AFTER we've already returned 200 to GitHub.
+    """
+    try:
+        if event == "pull_request" and payload.get("action") in ["opened", "synchronize"]:
+            parsed = parse_github_payload(payload)
+
+            if not parsed:
+                logger.warning("Could not parse payload — skipping")
+                return
+
+            if parsed.get("pr_number") and parsed.get("repo"):
+                logger.info(f"Processing PR #{parsed['pr_number']} in {parsed['repo']}")
+                diff = fetch_pr_diff(parsed["repo"], parsed["pr_number"], github_pat)
+                logger.info(f"Diff fetched — {len(diff)} files changed")
+                for f in diff:
+                    logger.info(f"  {f['filename']} +{f['additions']} -{f['deletions']}")
+        else:
+            logger.info(f"Skipping event: {event} action={payload.get('action', 'n/a')}")
+
+    except Exception as e:
+        logger.error(f"Error processing GitHub event: {type(e).__name__}: {e}")
 
 
 @github_bp.route("/webhook/github", methods=["POST"])
@@ -27,14 +54,13 @@ def github_webhook():
     payload = json.loads(payload_bytes)
     event = request.headers.get("X-GitHub-Event", "unknown")
 
-    logger.info(f"GitHub event verified and received: {event}")
+    logger.info(f"GitHub event received and verified: {event}")
 
-    if event == "pull_request" and payload.get("action") in ["opened", "synchronize"]:
-        parsed = parse_github_payload(payload)
-
-        if parsed.get("pr_number") and parsed.get("repo"):
-            logger.info(f"Fetching diff for PR #{parsed['pr_number']} in {parsed['repo']}")
-            diff = fetch_pr_diff(parsed["repo"], parsed["pr_number"], github_pat)
-            logger.info(f"Diff fetched — {len(diff)} files changed")
+    thread = threading.Thread(
+        target=process_github_event,
+        args=(payload, event, github_pat)
+    )
+    thread.daemon = True
+    thread.start()
 
     return {"status": "received"}, 200
