@@ -31,3 +31,20 @@ def verify_github_signature(payload_bytes: bytes, signature_header: str, secret:
         logger.warning("Signature mismatch — request rejected")
 
     return is_valid
+
+def verify_gitlab_token(token_header: str, secret: str) -> bool:
+    """
+    Verify that the webhook request genuinely came from GitLab.
+    GitLab sends your webhook token directly in X-Gitlab-Token header.
+    We compare it using compare_digest to prevent timing attacks.
+    """
+    if not token_header:
+        logger.warning("Missing X-Gitlab-Token header")
+        return False
+
+    is_valid = hmac.compare_digest(token_header, secret)
+
+    if not is_valid:
+        logger.warning("GitLab token mismatch — request rejected")
+
+    return is_valid

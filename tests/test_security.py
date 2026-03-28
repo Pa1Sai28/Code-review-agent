@@ -35,3 +35,14 @@ def test_missing_signature_fails():
 def test_invalid_format_fails():
     payload = b'{"action": "opened"}'
     assert verify_github_signature(payload, "invalidsignature", SECRET) is False
+    
+from app.utils.security import verify_gitlab_token
+
+def test_valid_gitlab_token_passes():
+    assert verify_gitlab_token("mysecrettoken", "mysecrettoken") is True
+
+def test_invalid_gitlab_token_fails():
+    assert verify_gitlab_token("wrongtoken", "mysecrettoken") is False
+
+def test_missing_gitlab_token_fails():
+    assert verify_gitlab_token("", "mysecrettoken") is False
