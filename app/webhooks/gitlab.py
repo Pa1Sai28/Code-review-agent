@@ -6,6 +6,9 @@ from flask import Blueprint, request, abort
 from dotenv import load_dotenv
 from app.utils.security import verify_gitlab_token
 from app.utils.gitlab_api import parse_gitlab_payload, fetch_mr_diff
+from app.agent.diff_formatter import format_diff_for_review, is_reviewable
+from app.agent.reviewer import review_diff
+from app.agent.comment_poster import post_gitlab_review
 from pathlib import Path
 
 load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env")
@@ -17,24 +20,55 @@ gitlab_bp = Blueprint("gitlab", __name__)
 def process_gitlab_event(payload: dict, event: str, gitlab_pat: str):
     """
     Process the GitLab event in a background thread.
-    This runs AFTER we've already returned 200 to GitLab.
+    Full pipeline: parse → fetch diff → format → review → post comments.
     """
     try:
-        if event == "Merge Request Hook" and payload.get("object_attributes", {}).get("action") in ["open", "update"]:
+        if event == "Merge Request Hook" and payload.get(
+            "object_attributes", {}
+        ).get("action") in ["open", "update"]:
+
             parsed = parse_gitlab_payload(payload)
 
             if not parsed:
-                logger.warning("Could not parse payload — skipping")
+                logger.warning("Could not parse GitLab payload — skipping")
                 return
 
-            if parsed.get("pr_number") and parsed.get("repo"):
-                logger.info(f"Processing MR !{parsed['pr_number']} in {parsed['repo']}")
-                diff = fetch_mr_diff(parsed["repo"], parsed["pr_number"], gitlab_pat)
-                logger.info(f"Diff fetched — {len(diff)} files changed")
-                for f in diff:
-                    logger.info(f"  {f['filename']} +{f['additions']} -{f['deletions']}")
+            repo = parsed.get("repo")
+            mr_iid = parsed.get("pr_number")
+
+            if not repo or not mr_iid:
+                logger.warning("Missing repo or MR IID — skipping")
+                return
+
+            logger.info(f"Processing MR !{mr_iid} in {repo}")
+
+            diff = fetch_mr_diff(repo, mr_iid, gitlab_pat)
+
+            if not diff:
+                logger.warning("No diff found — skipping review")
+                return
+
+            reviewable_files = [f for f in diff if is_reviewable(f["filename"])]
+            logger.info(f"Reviewing {len(reviewable_files)} of {len(diff)} files")
+
+            if not reviewable_files:
+                logger.info("No reviewable files — skipping")
+                return
+
+            formatted = format_diff_for_review(reviewable_files, parsed)
+            comments = review_diff(formatted, parsed)
+
+            logger.info(f"Claude found {len(comments)} issues")
+
+            success = post_gitlab_review(repo, mr_iid, comments, gitlab_pat, parsed)
+
+            if success:
+                logger.info(f"Review posted successfully for MR !{mr_iid}")
+            else:
+                logger.error(f"Failed to post review for MR !{mr_iid}")
+
         else:
-            logger.info(f"Skipping event: {event}")
+            logger.info(f"Skipping GitLab event: {event}")
 
     except Exception as e:
         logger.error(f"Error processing GitLab event: {type(e).__name__}: {e}")
@@ -54,10 +88,10 @@ def gitlab_webhook():
     try:
         payload = json.loads(payload_bytes)
     except json.JSONDecodeError:
-        logger.warning("Invalid JSON payload received — ignoring")
+        logger.warning("Invalid JSON payload — ignoring")
         return {"status": "received"}, 200
-    event = request.headers.get("X-Gitlab-Event", "unknown")
 
+    event = request.headers.get("X-Gitlab-Event", "unknown")
     logger.info(f"GitLab event received and verified: {event}")
 
     thread = threading.Thread(
