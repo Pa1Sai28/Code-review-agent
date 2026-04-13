@@ -56,7 +56,6 @@ def test_post_github_review_success():
     mock_github = MagicMock()
     mock_repo = MagicMock()
     mock_pr = MagicMock()
-
     mock_file = MagicMock()
     mock_file.filename = "app/auth.py"
     mock_file.patch = "@@ -0,0 +1,5 @@\n+    password = 'hardcoded123'\n+    query = 'SELECT'\n"
@@ -98,5 +97,39 @@ def test_post_github_review_empty_comments():
             result = post_github_review(
                 "Pa1Sai28/crates", 1, [], "fake_pat", PR_CONTEXT
             )
+    assert result is True
+
+
+def test_post_gitlab_review_success():
+    with patch("app.agent.comment_poster.gitlab") as mock_gitlab_module:
+        mock_gl = MagicMock()
+        mock_project = MagicMock()
+        mock_mr = MagicMock()
+        mock_mr.diff_refs = {
+            "base_sha": "abc123",
+            "start_sha": "def456",
+            "head_sha": "ghi789"
+        }
+        mock_project.mergerequests.get.return_value = mock_mr
+        mock_gl.projects.get.return_value = mock_project
+        mock_gitlab_module.Gitlab.return_value = mock_gl
+
+        from app.agent.comment_poster import post_gitlab_review
+        result = post_gitlab_review(
+            "Pa1Sai28/crates", 1, SAMPLE_COMMENTS, "fake_pat", PR_CONTEXT
+        )
 
     assert result is True
+    mock_mr.notes.create.assert_called()
+
+
+def test_post_gitlab_review_handles_error():
+    with patch("app.agent.comment_poster.gitlab") as mock_gitlab_module:
+        mock_gitlab_module.Gitlab.side_effect = Exception("Connection error")
+
+        from app.agent.comment_poster import post_gitlab_review
+        result = post_gitlab_review(
+            "Pa1Sai28/crates", 1, SAMPLE_COMMENTS, "fake_pat"
+        )
+
+    assert result is False

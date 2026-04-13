@@ -1,4 +1,5 @@
 import logging
+import gitlab
 from github import Github
 from github.GithubException import GithubException
 import github
@@ -157,4 +158,58 @@ def post_github_review(
         return False
     except Exception as e:
         logger.error(f"Unexpected error posting review: {type(e).__name__}: {e}")
+        return False
+
+def post_gitlab_review(
+    project_path: str,
+    mr_iid: int,
+    comments: list,
+    gitlab_pat: str,
+    pr_context: dict = None
+) -> bool:
+    """
+    Post Claude's review comments as GitLab MR discussion threads.
+    """
+    try:
+        gl = gitlab.Gitlab("https://gitlab.com", private_token=gitlab_pat)
+        project = gl.projects.get(project_path)
+        mr = project.mergerequests.get(mr_iid)
+
+        posted = 0
+
+        for c in comments:
+            filename = c.get("filename", "")
+            severity_emoji = {"error": "🔴", "warning": "🟡", "info": "🔵"}.get(
+                c.get("severity", "info"), "🔵"
+            )
+            dimension = c.get("dimension", "")
+            comment_body = f"{severity_emoji} **{dimension}**\n\n{c.get('comment', '')}"
+
+            try:
+                mr.discussions.create({
+                    "body": comment_body,
+                    "position": {
+                        "base_sha": mr.diff_refs["base_sha"],
+                        "start_sha": mr.diff_refs["start_sha"],
+                        "head_sha": mr.diff_refs["head_sha"],
+                        "position_type": "text",
+                        "new_path": filename,
+                        "new_line": 1
+                    }
+                })
+                posted += 1
+
+            except Exception as e:
+                logger.warning(f"Could not post inline — falling back to note: {e}")
+                mr.notes.create({"body": comment_body})
+                posted += 1
+
+        review_body = format_review_body(comments, pr_context)
+        mr.notes.create({"body": review_body})
+
+        logger.info(f"GitLab review posted — {posted} comments")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error posting GitLab review: {type(e).__name__}: {e}")
         return False
