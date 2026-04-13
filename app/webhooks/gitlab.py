@@ -4,6 +4,7 @@ import os
 import threading
 from flask import Blueprint, request, abort
 from dotenv import load_dotenv
+from nacl import secret
 from app.utils.security import verify_gitlab_token
 from app.utils.gitlab_api import parse_gitlab_payload, fetch_mr_diff
 from app.agent.diff_formatter import format_diff_for_review, is_reviewable
@@ -81,6 +82,8 @@ def gitlab_webhook():
     token_header = request.headers.get("X-Gitlab-Token", "")
     payload_bytes = request.get_data()
 
+    token_header = request.headers.get("X-Gitlab-Token", "")
+    
     if not verify_gitlab_token(token_header, secret):
         logger.warning("Rejected request — invalid GitLab token")
         abort(403)
