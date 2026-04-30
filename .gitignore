@@ -7,4 +7,9 @@ __pycache__/
 dist/
 .DS_Store
 .docker/
-infra/terraform-sa-key.json
+infra/*.json
+infra/.terraform/
+infra/.terraform.lock.hcl
+infra/terraform.tfstate
+infra/terraform.tfstate.backup
+infra/*.pem
