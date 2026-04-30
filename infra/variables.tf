@@ -19,5 +19,5 @@ variable "service_name" {
 variable "image_name" {
   description = "Docker image name in Artifact Registry"
   type        = string
-  default     = "code-review-agent"
+  default     = "app"
 }

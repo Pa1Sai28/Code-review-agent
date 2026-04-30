@@ -1,0 +1,14 @@
+cragent/
+.git/
+.github/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+*.egg-info/
+dist/
+.DS_Store
+infra/
+docs/
+tests/
+*.md
